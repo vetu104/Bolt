@@ -252,12 +252,29 @@ endif()
 
 # Bolt uses GTK on all platforms, but it must specifically use gtk3
 # to avoid symbols conflicting with CEF's GTK usage on Unix platforms
+if(NOT BOLT_USE_SNI)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
 target_include_directories(bolt PUBLIC ${GTK3_INCLUDE_DIRS})
 target_link_libraries(bolt PUBLIC ${GTK3_LIBRARIES})
 if(MSVC)
     target_link_directories(bolt PUBLIC ${GTK3_LIBRARY_DIRS})
+endif()
+endif()
+
+# Snitray
+if(BOLT_USE_SNI)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GLIB2 REQUIRED glib-2.0 gio-2.0 dbusmenu-glib-0.4)
+    add_library(snitray src/snitray/snitray.c)
+    target_include_directories(snitray PRIVATE ${GLIB2_INCLUDE_DIRS})
+    target_link_libraries(snitray PRIVATE ${GLIB2_LIBRARIES})
+    target_link_libraries(bolt PRIVATE snitray)
+    install(FILES src/snitray/StatusNotifierItem.xml DESTINATION "${BOLT_CEF_INSTALLDIR}/bolt-launcher/snitray")
+    target_compile_definitions(bolt PRIVATE USE_SNI)
+    target_compile_definitions(snitray PRIVATE
+        BOLT_SNI_XML_PATH="${CMAKE_INSTALL_PREFIX}${BOLT_CEF_INSTALLDIR}/bolt-launcher/snitray/StatusNotifierItem.xml"
+        BOLT_SNI_META_NAME="${BOLT_META_NAME}")
 endif()
 
 # Install commands for target dir layout - as per https://bitbucket.org/chromiumembedded/cef/wiki/Tutorial.md

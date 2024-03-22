@@ -1,6 +1,10 @@
 #include <filesystem>
 #include <fmt/core.h>
+#if not defined(USE_SNI)
 #include <gtk/gtk.h>
+#elif defined(USE_SNI)
+#include "snitray/snitray.h"
+#endif
 
 #include "browser.hxx"
 #include "browser/app.hxx"
@@ -40,7 +44,9 @@ constexpr int img_bps = 8;
 
 #define PROGRAM_DIRNAME "bolt-launcher"
 
+#if not defined(USE_SNI)
 void GtkStart(int argc, char** argv, Browser::Client*);
+#endif
 int BoltRunBrowserProcess(CefMainArgs, CefRefPtr<Browser::App>);
 bool LockXdgDirectories(std::filesystem::path&, std::filesystem::path&);
 
@@ -100,6 +106,12 @@ int BoltRunBrowserProcess(CefMainArgs main_args, CefRefPtr<Browser::App> cef_app
 	// note: is there any possible way to pass command line on Windows?
 	// __argv is nullptr, and all other methods get wchars when gtk needs normal chars...
 	GtkStart(0, nullptr, client.get());
+#elif defined(USE_SNI)
+	// Cast to void*, so we can pass this around in C code.
+	void *pclient = static_cast<void *>(client.get());
+	// Alternative system tray implementation to the xembed gtk3 one.
+	// Plugs into the already existing CEF's "glib mainloop".
+	start_snitray(pclient);
 #else
 	GtkStart(main_args.argc, main_args.argv, client.get());
 #endif
@@ -313,9 +325,23 @@ bool LockXdgDirectories(std::filesystem::path& config_dir, std::filesystem::path
 }
 #endif
 
+#if defined(USE_SNI)
+// The Browser::Client* took a world tour as a void* in C code and is back now.
+void SnitrayAppExit(void *pclient) {
+	CefRefPtr<Browser::Client> client = static_cast<Browser::Client *>(pclient);
+	client->Exit();
+}
+
+void SnitrayAppShow(void *pclient) {
+	CefRefPtr<Browser::Client> client = static_cast<Browser::Client *>(pclient);
+	client->OpenLauncher();
+}
+#endif
+
 // all these features exist in gtk3 and are deprecated for no reason at all, so ignore deprecation warnings
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if not defined(USE_SNI)
 static void TrayPopupMenu(GtkStatusIcon* status_icon, guint button, guint32 activate_time, gpointer popup_menu) {
     gtk_menu_popup(GTK_MENU(popup_menu), NULL, NULL, gtk_status_icon_position_menu, status_icon, button, activate_time);
 }
@@ -368,3 +394,4 @@ void GtkStart(int argc, char** argv, Browser::Client* client) {
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item_top_level), main_menu);
 }
 #pragma GCC diagnostic pop
+#endif

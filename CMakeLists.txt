@@ -1,156 +1,78 @@
 cmake_minimum_required(VERSION 3.21) # Minimum CEF requirement, but building with the latest cmake is strongly recommended
 project(Bolt VERSION 0.8 LANGUAGES C CXX)
 
+# Set default build type to Release
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release")
+endif()
+
+# Create a runtime directory structure in build dir to allow running Bolt without "make install"
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "staging-${CMAKE_BUILD_TYPE}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "staging-${CMAKE_BUILD_TYPE}")
+# Generate compile_commands.json, for use by language servers for highlighting/autocomplete/etc
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Tell git to ignore everything in the new build directory
+file(GENERATE OUTPUT .gitignore CONTENT "*")
+
 # e.g. becomes "libbolt-plugin.so" on linux
 set(BOLT_PLUGIN_LIB_NAME "bolt-plugin")
 
+# Cache variables for all builds: variables that show up in CMake gui and CMake -L
+# Some linux/mac specific cache vars are defined later
+set(CEF_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/cef/dist" CACHE PATH "Root external CEF binary distribution")
+set(BOLT_SKIP_LIBRARIES CACHE BOOL "Skip building the Bolt RS3 plugin api")
+set(BOLT_META_NAME "BoltLauncher" CACHE STRING "Name of application in metadata. Flatpak build sets this to com.adamcake.Bolt")
+
 if(NOT WIN32)
-    # name of application in metadata, defaulting to "BoltLauncher", but usually overridden to "com.adamcake.Bolt" by flatpak for example
-    if(NOT BOLT_META_NAME)
-        set(BOLT_META_NAME "BoltLauncher")
+    include(GNUInstallDirs)
+
+    # defines DESTINATION of shell script (relative to CMAKE_INSTALL_PREFIX, unless set to an absolute path)
+    # things like flatpak need to override this
+    set(BOLT_BINDIR "${CMAKE_INSTALL_BINDIR}" CACHE PATH "Set custom path for the launch wrapper script")
+
+    # as above but lib instead of bin
+    set(BOLT_LIBDIR "${CMAKE_INSTALL_LIBDIR}" CACHE PATH "Set installation root for CEF and Bolt itself. Defaults to lib/bolt-launcher")
+
+    if(CMAKE_INSTALL_PREFIX STREQUAL "/")
+        set(BOLT_FULL_LIBDIR "/${BOLT_LIBDIR}")
+    else()
+        set(BOLT_FULL_LIBDIR "${CMAKE_INSTALL_PREFIX}/${BOLT_LIBDIR}")
     endif()
 
-    # how this program is described in human-readable strings in metadata
-    # not in plaintext for a reason
+    # defines DESTINATION of metadata like icons (relative to CMAKE_INSTALL_PREFIX, unless set to an absolute path)
+    set(BOLT_SHAREDIR "${CMAKE_INSTALL_DATADIR}" CACHE PATH "Set custom share target")
+endif()
+
     string(ASCII 74 97 103 101 120 32 108 97 117 110 99 104 101 114 BOLT_PROGRAM_NAME)
     string(ASCII 82 117 110 101 83 99 97 112 101 BOLT_GAME_NAME)
     string(TOLOWER "${BOLT_GAME_NAME}" BOLT_GAME_NAME_LOWER)
 
-    # .desktop file contents
-    string(JOIN "\n" BOLT_DESKTOP_INFO
-        "[Desktop Entry]"
-        "Type=Application"
-        "Terminal=false"
-        "Name=Bolt"
-        "GenericName=Bolt Launcher"
-        "Comment=Third-party ${BOLT_PROGRAM_NAME}"
-        "Keywords=games;"
-        "Exec=bolt"
-        "Icon=${BOLT_META_NAME}"
-        "Categories=Game;"
-        "StartupWMClass=BoltLauncher"
-        ""
-    )
-    file(GENERATE OUTPUT bolt.desktop CONTENT "${BOLT_DESKTOP_INFO}")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/share/bolt.desktop.in"
+        "bolt.desktop"
+        @ONLY)
 
-    # extra NoDisplay .desktop entry, just for DEs to pick up on icons correctly
-    string(JOIN "\n" BOLT_DESKTOP_GAME_INFO
-        "[Desktop Entry]"
-        "Version=1.0"
-        "Type=Application"
-        "Name=${BOLT_GAME_NAME}"
-        "GenericName=${BOLT_GAME_NAME}"
-        "Icon=${BOLT_GAME_NAME_LOWER}"
-        "Terminal=false"
-        "NoDisplay=true"
-        "StartupWMClass=${BOLT_GAME_NAME}"
-        ""
-    )
-    file(GENERATE OUTPUT bolt.game.desktop CONTENT "${BOLT_DESKTOP_GAME_INFO}")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/share/bolt.game.desktop.in"
+        "bolt.game.desktop"
+        @ONLY)
 
-    # metainfo.xml file contents
-    string(JOIN "\n" BOLT_METAINFO
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<component type=\"desktop\">"
-        "<id>${BOLT_META_NAME}</id>"
-        "<name>Bolt Launcher</name>"
-        "<developer_name>Adamcake</developer_name>"
-        "<summary>Third-party ${BOLT_PROGRAM_NAME}</summary>"
-        "<description><p>Bolt is a free, open-source, third-party implementation of the ${BOLT_PROGRAM_NAME}.</p></description>"
-        "<screenshots>"
-        "    <screenshot type=\"default\">https://raw.githubusercontent.com/flathub/net.runelite.RuneLite/master/screenshot.png</screenshot>"
-        "</screenshots>"
-        "<releases>"
-        "    <release version=\"0.8.0\" date=\"2024-02-05\"/>"
-        "    <release version=\"0.7.0\" date=\"2023-12-19\"/>"
-        "    <release version=\"0.6.0\" date=\"2023-12-15\"/>"
-        "    <release version=\"0.5.0\" date=\"2023-12-11\"/>"
-        "    <release version=\"0.4.0\" date=\"2023-11-03\"/>"
-        "    <release version=\"0.3.0\" date=\"2023-11-02\"/>"
-        "    <release version=\"0.2.0\" date=\"2023-09-16\"/>"
-        "    <release version=\"0.1.0\" date=\"2023-09-02\"/>"
-        "</releases>"
-        "<metadata_license>CC0-1.0</metadata_license>"
-        "<project_license>AGPL-3.0</project_license>"
-        "<url type=\"homepage\">https://bolt.adamcake.com/</url>"
-        "<categories>"
-        "    <category>Game</category>"
-        "</categories>"
-        "<launchable type=\"desktop-id\">${BOLT_META_NAME}.desktop</launchable>"
-        "<content_rating type=\"oars-1.1\">"
-        "    <content_attribute id=\"violence-cartoon\">moderate</content_attribute>"
-        "    <content_attribute id=\"violence-fantasy\">intense</content_attribute>"
-        "    <content_attribute id=\"violence-bloodshed\">mild</content_attribute>"
-        "    <content_attribute id=\"drugs-alcohol\">moderate</content_attribute>"
-        "    <content_attribute id=\"drugs-narcotics\">mild</content_attribute>"
-        "    <content_attribute id=\"drugs-tobacco\">mild</content_attribute>"
-        "    <content_attribute id=\"sex-themes\">mild</content_attribute>"
-        "    <content_attribute id=\"language-profanity\">mild</content_attribute>"
-        "    <content_attribute id=\"social-chat\">intense</content_attribute>"
-        "    <content_attribute id=\"social-info\">moderate</content_attribute>"
-        "    <content_attribute id=\"money-purchasing\">mild</content_attribute>"
-        "</content_rating>"
-        "</component>"
-        ""
-    )
-    file(GENERATE OUTPUT metainfo.xml CONTENT "${BOLT_METAINFO}")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/share/metainfo.xml.in"
+        "metainfo.xml"
+        @ONLY)
 
-    # necessary for installing files in both /opt and /usr
-    # can be overridden using --install-prefix in the initial cmake setup command
-    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-        set(CMAKE_INSTALL_PREFIX /)
-    endif()
-
-    # location to install the CEF blob, default location is /opt
-    if(NOT BOLT_CEF_INSTALLDIR)
-        set(BOLT_CEF_INSTALLDIR opt)
-    endif()
-
-    # defines DESTINATION of shell script (relative to CMAKE_INSTALL_PREFIX, unless set to an absolute path)
-    # things like flatpak need to override this
-    if(NOT BOLT_BINDIR)
-        set(BOLT_BINDIR usr/local/bin)
-    endif()
-
-    # as above but lib instead of bin
-    if(NOT BOLT_LIBDIR)
-        set(BOLT_LIBDIR usr/local/lib)
-    endif()
-
-    # defines DESTINATION of metadata like icons (relative to CMAKE_INSTALL_PREFIX, unless set to an absolute path)
-    if(NOT BOLT_SHAREDIR)
-        set(BOLT_SHAREDIR usr/local/share)
-    endif()
-
-    # Short shell script to be installed in /usr/local/bin, gets renamed to "bolt" later
-    file(RELATIVE_PATH BOLT_SCRIPT_CD_PATH "${CMAKE_INSTALL_PREFIX}/${BOLT_BINDIR}" "${CMAKE_INSTALL_PREFIX}/${BOLT_CEF_INSTALLDIR}/bolt-launcher")
-    file(GENERATE OUTPUT bolt-run.sh CONTENT "#!/bin/sh -eu\ncd \"$(dirname \"$0\")/${BOLT_SCRIPT_CD_PATH}\"\nexec ./bolt \"$@\"\n")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/bin/bolt-run.sh.in"
+        "bolt-run.sh"
+        @ONLY)
 
     # auto-generated helper for running from build dir; this file does not get installed
-    # appends to LD_LIBRARY_PATH only if the plugin library is being built, otherwise the dir won't exist
-    if(NOT BOLT_SKIP_LIBRARIES)
-        set(BOLT_PLUGIN_LIB_EXPORT "export LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}/${BOLT_LIBDIR}\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}")
-    endif()
-    string(JOIN "\n" BOLT_STAGING_SCRIPT
-        "#!/bin/sh -eu"
-        "# This is a helper script for running a staging build, i.e. a build that has been installed in this directory."
-        "# This script will not be installed anywhere by `cmake --install`, as it's for development/staging purposes only."
-        "${BOLT_PLUGIN_LIB_EXPORT}"
-        "export XDG_DATA_DIRS=${CMAKE_CURRENT_BINARY_DIR}/${BOLT_SHAREDIR}\${XDG_DATA_DIRS:+:\${XDG_DATA_DIRS}}"
-        "export XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/config"
-        "export XDG_DATA_HOME=${CMAKE_CURRENT_BINARY_DIR}/data"
-        "cd ${CMAKE_CURRENT_BINARY_DIR}/${BOLT_CEF_INSTALLDIR}/bolt-launcher"
-        "exec ./bolt \"$@\""
-        ""
-    )
-    file(GENERATE OUTPUT bolt.sh CONTENT ${BOLT_STAGING_SCRIPT} FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-endif()
-
-# Generate compile_commands.json, for use by language servers for highlighting/autocomplete/etc
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Tell git to ignore everything in the new build directory
-file(GENERATE OUTPUT .gitignore CONTENT "*")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/bin/bolt.sh.in"
+        "bolt.sh"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        @ONLY)
 
 # source html directory
 if(NOT BOLT_HTML_DIR)
@@ -158,12 +80,19 @@ if(NOT BOLT_HTML_DIR)
 endif()
 
 # libcef C++ wrapper
-if(NOT CEF_ROOT)
-    set(CEF_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/cef/dist")
-endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CEF_ROOT}/cmake")
 find_package(CEF REQUIRED)
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
+
+# Copy CEF runtime files to build tree
+# Invokes an additional cmake script
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/cmake/copy-cef-runtime.cmake.in"
+    "copy-cef-runtime.cmake"
+    @ONLY)
+add_custom_target(copy_cef_runtime
+    ALL
+    COMMAND ${CMAKE_COMMAND}
+    -P"${CMAKE_CURRENT_BINARY_DIR}/copy-cef-runtime.cmake")
 
 # select an implementation for OS-specific behaviour of launcher window
 if(WIN32)
@@ -247,7 +176,7 @@ endif()
 # fake java wrapper for running hdos
 if(NOT WIN32)
     add_executable(java-proxy src/fake_java.c)
-    install(TARGETS java-proxy DESTINATION ${BOLT_CEF_INSTALLDIR}/bolt-launcher)
+    install(TARGETS java-proxy DESTINATION ${BOLT_LIBDIR}/bolt-launcher)
 endif()
 
 # Bolt uses GTK on all platforms, but it must specifically use gtk3
@@ -270,10 +199,10 @@ if(BOLT_USE_SNI)
     target_include_directories(snitray PRIVATE ${GLIB2_INCLUDE_DIRS})
     target_link_libraries(snitray PRIVATE ${GLIB2_LIBRARIES})
     target_link_libraries(bolt PRIVATE snitray)
-    install(FILES src/snitray/StatusNotifierItem.xml DESTINATION "${BOLT_CEF_INSTALLDIR}/bolt-launcher/snitray")
+    install(FILES src/snitray/StatusNotifierItem.xml DESTINATION "${BOLT_LIBDIR}/bolt-launcher/snitray")
     target_compile_definitions(bolt PRIVATE USE_SNI)
     target_compile_definitions(snitray PRIVATE
-        BOLT_SNI_XML_PATH="${CMAKE_INSTALL_PREFIX}${BOLT_CEF_INSTALLDIR}/bolt-launcher/snitray/StatusNotifierItem.xml"
+        BOLT_SNI_XML_PATH="${BOLT_FULL_LIBDIR}/bolt-launcher/snitray/StatusNotifierItem.xml"
         BOLT_SNI_META_NAME="${BOLT_META_NAME}")
 endif()
 
@@ -281,8 +210,8 @@ endif()
 if(APPLE)
     # TODO: mac support
 else()
-    install(TARGETS bolt DESTINATION ${BOLT_CEF_INSTALLDIR}/bolt-launcher)
-    install(DIRECTORY "${CEF_ROOT}/${CMAKE_BUILD_TYPE}/" "${CEF_ROOT}/Resources/" DESTINATION ${BOLT_CEF_INSTALLDIR}/bolt-launcher USE_SOURCE_PERMISSIONS)
+    install(TARGETS bolt DESTINATION ${BOLT_LIBDIR}/bolt-launcher)
+    install(DIRECTORY "${CEF_ROOT}/${CMAKE_BUILD_TYPE}/" "${CEF_ROOT}/Resources/" DESTINATION ${BOLT_LIBDIR}/bolt-launcher USE_SOURCE_PERMISSIONS)
 endif()
 
 # Build helper libraries

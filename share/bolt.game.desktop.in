@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=@BOLT_GAME_NAME@
+GenericName=@BOLT_GAME_NAME@
+Icon=@BOLT_GAME_NAME_LOWER@
+Terminal=false
+NoDisplay=true
+StartupWMClass=@BOLT_GAME_NAME@

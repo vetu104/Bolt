@@ -1,0 +1,9 @@
+#!/bin/sh -eu
+# This is a helper script for running a staging build, i.e. a build that has been installed in this directory.
+# This script will not be installed anywhere by `cmake --install`, as it's for development/staging purposes only.
+# @BOLT_PLUGIN_LIB_EXPORT@
+export XDG_DATA_HOME="@CMAKE_CURRENT_BINARY_DIR@/staging-@CMAKE_BUILD_TYPE@-dotlocalshare"
+export XDG_DATA_DIRS="@CMAKE_BINARY_DIR@/staging-@CMAKE_BUILD_TYPE@-dotlocalshare"
+export XDG_CONFIG_HOME="@CMAKE_CURRENT_BINARY_DIR@/staging-@CMAKE_BUILD_TYPE@-dotconfig"
+export LD_LIBRARY_PATH="@CMAKE_CURRENT_BINARY_DIR@/@CMAKE_RUNTIME_OUTPUT_DIRECTORY@"
+exec @CMAKE_CURRENT_BINARY_DIR@/@CMAKE_RUNTIME_OUTPUT_DIRECTORY@/bolt "$@"

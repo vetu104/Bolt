@@ -1,0 +1,3 @@
+# Trailing space after source dir for rsync behaviour
+file(COPY "@CEF_ROOT@/@CMAKE_BUILD_TYPE@/" DESTINATION "@CMAKE_RUNTIME_OUTPUT_DIRECTORY@")
+file(COPY "@CEF_ROOT@/Resources/" DESTINATION "@CMAKE_RUNTIME_OUTPUT_DIRECTORY@")

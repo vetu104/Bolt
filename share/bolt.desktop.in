@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Terminal=false
+Name=Bolt
+GenericName=Bolt Launcher
+Comment=Third-party @BOLT_PROGRAM_NAME@
+Keywords=games;
+Exec=bolt
+Icon=@BOLT_META_NAME@
+Categories=Game;
+StartupWMClass=BoltLauncher
